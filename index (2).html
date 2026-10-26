@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DSN Library</title>
+<style>
+:root{--bg:#f6f8fb;--c:#fff;--t:#1b2433;--m:#586275;--p:#1f5fbf;--b:#d3dbe6}
+@media(prefers-color-scheme:dark){:root{--bg:#10151d;--c:#18202b;--t:#e8edf5;--m:#a3afc1;--p:#7db0ff;--b:#2a3646}}
+*{box-sizing:border-box}body{margin:0;font:16px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--t)}
+header{background:var(--c);border-bottom:1px solid var(--b);padding:12px 16px}header h1{margin:0;font-size:20px}
+nav{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}nav a{padding:8px 12px;border-radius:8px;color:var(--p);text-decoration:none;border:1px solid var(--b)}
+main{max-width:900px;margin:0 auto;padding:16px}.card{background:var(--c);border:1px solid var(--b);border-radius:12px;padding:14px;margin:10px 0}
+input,select,textarea,button{font:inherit;padding:10px;border-radius:8px;border:1px solid var(--b);background:var(--c);color:var(--t);width:100%;margin:4px 0}
+button{background:var(--p);color:var(--bg);border:0;cursor:pointer;width:auto}button.s{background:transparent;color:var(--p);border:1px solid var(--p);padding:6px 10px}
+label{display:block;margin-top:8px;font-weight:600}.hp{position:absolute;left:-9999px}.ok{color:#127a3d}.no{color:#b3261e}.tag{font-size:14px;color:var(--m)}
+.row{display:flex;gap:8px;flex-wrap:wrap}.row>*{flex:1 1 140px}a{color:var(--p)}:focus-visible{outline:3px solid var(--p);outline-offset:1px}
+@media(prefers-color-scheme:dark){.ok{color:#5fd68a}.no{color:#ff8a80}}
+</style></head><body>
+<header><h1 id="nm">DSN Library</h1><div class="tag" id="tg">Digital Smart Network Library</div>
+<nav><a href="#/">Search</a><a href="#/apply">Apply for membership</a><a href="#/suggest">Suggest a book</a><a href="#/staff">Staff login</a></nav></header>
+<main id="m"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script>
+const sb=supabase.createClient(CFG.url,CFG.key),$=s=>document.querySelector(s),M=$("#m");
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const STAFF=["super_admin","librarian","assistant_librarian","acquisition_staff"],CAT=["super_admin","librarian","assistant_librarian"];
+let me=null;
+async function loadMe(){const{data:{session}}=await sb.auth.getSession();me=null;if(session){const{data}=await sb.from("profiles").select("role,is_active").eq("id",session.user.id).maybeSingle();me=data}}
+const avail=a=>!a||!a.total_copies?`<div class=no>No copies in library</div>`:a.available_copies>0?`<div class=ok>✔ ${a.available_copies} of ${a.total_copies} available</div>`:`<div class=no>All ${a.total_copies} copies are issued</div>`;
+const LANG=["English","Gujarati","Hindi"];
+const fld=([n,l,r,t,o])=>`<label for=${n}>${l}${r?" *":""}</label>`+(t==="select"?`<select id=${n}>${o.map(v=>`<option>${v}</option>`).join("")}</select>`:t==="textarea"?`<textarea id=${n} rows=3 maxlength=1000></textarea>`:`<input id=${n} type=${t||"text"}${r?" required":""}>`);
+const vals=F=>{const o={};F.forEach(([n])=>{const v=$("#"+n).value.trim();if(v)o[n]=v});return o};
+
+async function route(){const[,p,id]=(location.hash.slice(1)||"/").split("/");
+ if(p==="book")return book(id);if(p==="apply"||p==="suggest")return form(p);if(p==="staff")return staff();return home()}
+addEventListener("hashchange",route);
+
+async function home(){
+ M.innerHTML=`<h2>Search the catalogue</h2><form class=card id=sf role=search><label for=q>Title, author, ISBN or subject</label><input id=q type=search><div class=row><div><label for=lg>Language</label><select id=lg><option value="">Any</option>${LANG.map(v=>`<option>${v}</option>`).join("")}</select></div><div><label for=av>Availability</label><select id=av><option value="">All</option><option value=1>Available now</option></select></div></div><button>Search</button></form><div id=res></div>`;
+ $("#sf").onsubmit=e=>{e.preventDefault();search()};search()}
+async function search(){const q=$("#q").value.replace(/[,()%*"\\]/g," ").trim(),lg=$("#lg").value,av=$("#av").value,r=$("#res");r.textContent="Searching…";
+ let x=sb.from("bib_records").select("id,title,author,publisher,publication_year,language,call_number").order("title").limit(50);
+ if(q)x=x.or(["title","author","isbn","subject","keywords"].map(f=>`${f}.ilike.%${q}%`).join(","));
+ if(lg)x=x.eq("language",lg);
+ const{data,error}=await x;if(error)return r.textContent="Search failed. Please try again.";
+ const{data:a}=await sb.from("opac_availability").select("bib_id,total_copies,available_copies").in("bib_id",data.map(b=>b.id));
+ const A=Object.fromEntries((a||[]).map(v=>[v.bib_id,v])),list=data.filter(b=>!av||A[b.id]?.available_copies>0);
+ r.innerHTML=list.length?list.map(b=>`<div class=card><a href="#/book/${esc(b.id)}"><b>${esc(b.title)}</b></a><div>${esc(b.author)}</div><div class=tag>${esc(b.publisher)} ${esc(b.publication_year)} · ${esc(b.language)} · ${esc(b.call_number)}</div>${avail(A[b.id])}</div>`).join(""):"<p>No results found.</p>"}
+
+async function book(id){M.textContent="Loading…";
+ const{data:b}=await sb.from("bib_records").select("*").eq("id",id).maybeSingle();if(!b)return M.innerHTML="<p>Book not found. <a href='#/'>Back</a></p>";
+ const{data:a}=await sb.from("opac_availability").select("*").eq("bib_id",id).maybeSingle();
+ const f=[["Author","author"],["Publisher","publisher"],["Year","publication_year"],["Edition","edition"],["ISBN","isbn"],["Language","language"],["Subject","subject"],["DDC","ddc_number"],["Colon class","colon_class"],["Call number","call_number"],["Pages","pages"]];
+ M.innerHTML=`<p><a href="#/">← Back to search</a></p><div class=card><h2>${esc(b.title)}</h2>${avail(a)}${a?.locations?.length?`<div class=tag>Location: ${esc(a.locations.join(", "))}</div>`:""}<dl>${f.filter(([,k])=>b[k]).map(([l,k])=>`<dt class=tag>${l}</dt><dd>${esc(b[k])}</dd>`).join("")}</dl><p>${esc(b.description)}</p></div>`}
+
+const FORMS={apply:{t:"Apply for membership",tb:"membership_applications",f:[["full_name","Full name",1],["email","Email",1,"email"],["phone","Phone",0,"tel"],["category","Category",1,"select",["student","faculty","staff","external"]],["institution_id","Institution ID / roll no.",0],["department","Department",0],["address","Address",0,"textarea"],["message","Message",0,"textarea"]]},
+suggest:{t:"Suggest a book",tb:"book_suggestions",f:[["title","Book title",1],["author","Author",0],["isbn","ISBN",0],["publisher","Publisher",0],["reason","Why should we buy it?",0,"textarea"],["suggester_name","Your name",0],["suggester_email","Your email",0,"email"]]}};
+function form(k){const F=FORMS[k];
+ M.innerHTML=`<h2>${F.t}</h2><form class=card id=ff>${F.f.map(fld).join("")}<input class=hp id=hp tabindex=-1 autocomplete=off aria-hidden=true><button>Submit</button><p id=msg role=status></p></form>`;
+ $("#ff").onsubmit=async e=>{e.preventDefault();const g=$("#msg");
+  if($("#hp").value||Date.now()-(+localStorage.lastSub||0)<30000)return g.textContent="Please wait a moment and try again.";
+  const{error}=await sb.from(F.tb).insert(vals(F.f));
+  if(error)return g.textContent="Could not submit. Please check the details and try again.";
+  localStorage.lastSub=Date.now();e.target.reset();g.textContent="Thank you! Your request was received."}}
+
+const TF=[["title","Title",1],["author","Author"],["isbn","ISBN"],["publisher","Publisher"],["publication_year","Year",0,"number"],["edition","Edition"],["language","Language",0,"select",LANG],["subject","Subject"],["ddc_number","DDC number"],["colon_class","Colon class"],["call_number","Call number"]];
+async function logout(){await sb.auth.signOut();staff()}
+async function staff(){await loadMe();
+ if(!me){M.innerHTML=`<h2>Staff login</h2><form class=card id=lf><label for=em>Email</label><input id=em type=email required><label for=pw>Password</label><input id=pw type=password required><button>Log in</button><p id=msg role=alert></p></form>`;
+  $("#lf").onsubmit=async e=>{e.preventDefault();const{error}=await sb.auth.signInWithPassword({email:$("#em").value,password:$("#pw").value});error?$("#msg").textContent="Login failed. Check your email and password.":staff()};return}
+ if(!me.is_active||!STAFF.includes(me.role)){M.innerHTML=`<p>Your account does not have staff access.</p><button id=lo>Log out</button>`;$("#lo").onclick=logout;return}
+ const can=CAT.includes(me.role);
+ M.innerHTML=`<h2>Staff dashboard</h2><p class=tag>Role: ${esc(me.role)} <button class=s id=lo>Log out</button></p><div id=st class=row></div>${can?`<h3>Add a title</h3><form class=card id=nb>${TF.map(fld).join("")}<button>Save title</button><p id=nmsg role=status></p></form>`:""}${can?`<h3>Circulation</h3><form class=card id=cf onsubmit="return false"><label for=cm>Member number (e.g. M-000001), needed for Issue</label><input id=cm><label for=ca>Accession number or barcode (e.g. ACC-000001)</label><input id=ca><button type=button data-a=issue_book>Issue</button> <button type=button data-a=return_book>Return</button> <button type=button data-a=renew_book>Renew</button><p id=cmsg role=status></p></form><h3>Currently issued</h3><div id=ln></div><h3>Reservations</h3><div id=rs></div><h3>Unpaid fines</h3><div id=fn></div><h3>Members</h3><form class=card id=mf><div class=row><div><label for=mn>Full name *</label><input id=mn required></div><div><label for=me>Email</label><input id=me type=email></div><div><label for=mp>Phone</label><input id=mp type=tel></div><div><label for=mt>Member type</label><select id=mt></select></div></div><button>Add member</button><p id=mmsg role=status></p></form><div id=ml></div>`:""}<h3>Catalogue and copies</h3><div id=cl></div>${can?`<h3>Membership applications</h3><div id=ap></div>`:""}<h3>Book suggestions</h3><div id=su></div>`;
+ $("#lo").onclick=logout;
+ const cnt=async(t,f)=>{let x=sb.from(t).select("*",{count:"exact",head:true});if(f)x=f(x);return(await x).count??0};
+ const[t,c,p]=await Promise.all([cnt("bib_records"),cnt("copies"),cnt("membership_applications",x=>x.eq("status","pending"))]);
+ $("#st").innerHTML=[["Titles",t],["Copies",c],["Pending applications",p]].map(([l,v])=>`<div class=card><b style="font-size:24px">${v}</b><div class=tag>${l}</div></div>`).join("");
+ if(can){$("#nb").onsubmit=async e=>{e.preventDefault();const o=vals(TF);if(o.publication_year)o.publication_year=+o.publication_year;
+  const{error}=await sb.from("bib_records").insert(o);
+  $("#nmsg").textContent=error?(error.code==="23505"?"This ISBN already exists.":"Could not save: "+error.message):"Saved.";if(!error){e.target.reset();staff()}};
+  review("membership_applications","#ap","approved","rejected",1)}
+ if(can)circ();catalogue(can);review("book_suggestions","#su","accepted","rejected",1)}
+
+async function catalogue(can){
+ const{data}=await sb.from("bib_records").select("id,title,author,call_number,copies(accession_number,status,location)").order("created_at",{ascending:false}).limit(30);
+ $("#cl").innerHTML=(data||[]).map(b=>`<div class=card><b>${esc(b.title)}</b> <span class=tag>${esc(b.author)} · ${esc(b.call_number)}</span><div class=tag>${(b.copies||[]).map(c=>`${esc(c.accession_number)} (${esc(c.status)})`).join(", ")||"No copies yet"}</div>${can?`<button class=s data-b="${esc(b.id)}">+ Add copy</button> <button class=s data-r="${esc(b.id)}">Reserve</button>`:""}</div>`).join("")||"<p>No titles yet.</p>";
+ $("#cl").onclick=async e=>{const rv=e.target.closest("button[data-r]");
+  if(rv){const mn=prompt("Member number to reserve for (e.g. M-000001):");if(!mn)return;
+   const{data,error}=await sb.rpc("reserve_title",{p_member_no:mn,p_bib:rv.dataset.r});alert(error?error.message:data);return lists()}
+  const b=e.target.closest("button[data-b]");if(!b)return;const loc=prompt("Shelf location for the new copy (e.g. Main Hall - Rack A):");if(loc===null)return;
+  const{data:br}=await sb.from("branches").select("id").eq("code","MAIN").maybeSingle();
+  const{error}=await sb.from("copies").insert({bib_id:b.dataset.b,location:loc.trim()||null,branch_id:br?.id});
+  if(error)alert("Could not add copy: "+error.message);catalogue(can)}}
+
+async function review(tb,el,ok,no){
+ const open=tb==="book_suggestions"?"new":"pending";
+ const{data}=await sb.from(tb).select("*").order("created_at",{ascending:false}).limit(20);
+ $(el).innerHTML=(data||[]).map(r=>`<div class=card><b>${esc(r.full_name||r.title)}</b> <span class=tag>${esc(r.status)}</span><div class=tag>${esc(r.email||r.author)} ${esc(r.category)} ${esc(r.phone)}</div><div>${esc(r.message||r.reason)}</div>${r.status===open?`<button class=s data-i="${esc(r.id)}" data-s="${ok}">${ok}</button> <button class=s data-i="${esc(r.id)}" data-s="${no}">${no}</button>`:tb==="membership_applications"&&r.status==="approved"?`<button class=s data-m="${esc(r.id)}">Create member</button>`:""}</div>`).join("")||"<p>None yet.</p>";
+ $(el).onclick=async e=>{const m=e.target.closest("button[data-m]");
+  if(m){const{data,error}=await sb.rpc("create_member_from_application",{p_app:m.dataset.m});alert(error?error.message:"Member created. Member number: "+data);return}
+  const b=e.target.closest("button[data-i]");if(!b)return;
+  const u=(await sb.auth.getUser()).data.user,o={status:b.dataset.s,reviewed_by:u.id};if(tb==="membership_applications")o.reviewed_at=new Date().toISOString();
+  await sb.from(tb).update(o).eq("id",b.dataset.i);review(tb,el,ok,no)}}
+
+async function circ(){
+ $("#cf").onclick=async e=>{const b=e.target.closest("button[data-a]");if(!b)return;const a=$("#ca").value.trim(),m=$("#cm").value.trim(),g=$("#cmsg");
+  if(!a||(b.dataset.a==="issue_book"&&!m))return g.textContent="Please fill in the required boxes.";
+  g.textContent="Working…";
+  const{data,error}=await sb.rpc(b.dataset.a,b.dataset.a==="issue_book"?{p_member_no:m,p_accession:a}:{p_accession:a});
+  g.textContent=error?"✖ "+error.message:"✔ "+data;if(!error){$("#ca").value="";lists()}};
+ $("#mf").onsubmit=async e=>{e.preventDefault();const o={full_name:$("#mn").value.trim(),member_type_id:$("#mt").value};
+  if($("#me").value.trim())o.email=$("#me").value.trim();if($("#mp").value.trim())o.phone=$("#mp").value.trim();
+  const{error}=await sb.from("members").insert(o);$("#mmsg").textContent=error?"Could not save: "+error.message:"Member added.";if(!error){e.target.reset();lists()}};
+ $("#rs").onclick=async e=>{const b=e.target.closest("button[data-c]");if(!b||!confirm("Cancel this reservation?"))return;
+  const{error}=await sb.rpc("cancel_reservation",{p_res:b.dataset.c});if(error)alert(error.message);lists()};
+ await sb.rpc("expire_reservations");
+ $("#fn").onclick=async e=>{const b=e.target.closest("button[data-f]");if(!b)return;
+  const{data,error}=await sb.rpc("settle_fine",{p_fine:b.dataset.f,p_status:b.dataset.s});if(error)alert(error.message);lists()};
+ const{data:T}=await sb.from("member_types").select("id,name").order("name");
+ $("#mt").innerHTML=(T||[]).map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join("");lists()}
+async function lists(){const today=new Date().toISOString().slice(0,10);
+ const[L,F,Mm,R]=await Promise.all([
+  sb.from("loans").select("due_date,renewals,members(member_no,full_name),copies(accession_number,bib_records(title))").is("returned_at",null).order("due_date").limit(50),
+  sb.from("fines").select("id,amount,days_late,members(member_no,full_name)").eq("status","unpaid").limit(50),
+  sb.from("members").select("member_no,full_name,status,expiry_date,member_types(name)").order("created_at",{ascending:false}).limit(30),
+  sb.from("reservations").select("id,status,expires_at,created_at,members(member_no,full_name),bib_records(title),copies(accession_number)").in("status",["waiting","ready"]).order("created_at").limit(50)]);
+ $("#rs").innerHTML=(R.data||[]).map(r=>`<div class=card><b>${esc(r.bib_records?.title)}</b> <span class=tag>${esc(r.status)}</span><div class=tag>${esc(r.members?.full_name)} (${esc(r.members?.member_no)})${r.status==="ready"?` · hold on ${esc(r.copies?.accession_number)} until ${esc(String(r.expires_at).slice(0,10))}`:""}</div><button class=s data-c="${esc(r.id)}">Cancel</button></div>`).join("")||"<p>No open reservations.</p>";
+ $("#ln").innerHTML=(L.data||[]).map(l=>`<div class=card><b>${esc(l.copies?.bib_records?.title)}</b> <span class=tag>${esc(l.copies?.accession_number)}</span><div class=tag>${esc(l.members?.full_name)} (${esc(l.members?.member_no)}) · due ${esc(l.due_date)} · renewals ${l.renewals}</div>${l.due_date<today?`<div class=no>Overdue</div>`:""}</div>`).join("")||"<p>No books are currently issued.</p>";
+ $("#fn").innerHTML=(F.data||[]).map(f=>`<div class=card>Rs ${esc(f.amount)} · ${esc(f.members?.full_name)} (${esc(f.members?.member_no)}) · ${f.days_late} days late<br><button class=s data-f="${esc(f.id)}" data-s=paid>Mark paid</button> <button class=s data-f="${esc(f.id)}" data-s=waived>Waive</button></div>`).join("")||"<p>No unpaid fines.</p>";
+ $("#ml").innerHTML=(Mm.data||[]).map(m=>`<div class=card><b>${esc(m.full_name)}</b> <span class=tag>${esc(m.member_no)} · ${esc(m.member_types?.name)} · ${esc(m.status)} · expires ${esc(m.expiry_date)}</span></div>`).join("")||"<p>No members yet.</p>"}
+
+sb.from("settings").select("key,value").then(({data})=>{(data||[]).forEach(r=>{if(r.key==="library_name")$("#nm").textContent=r.value;if(r.key==="tagline")$("#tg").textContent=r.value})});
+route();
+</script></body></html>
