@@ -68,8 +68,8 @@ async function staff(){await loadMe();
  if(!me){M.innerHTML=`<h2>Staff login</h2><form class=card id=lf><label for=em>Email</label><input id=em type=email required><label for=pw>Password</label><input id=pw type=password required><button>Log in</button><p id=msg role=alert></p></form>`;
   $("#lf").onsubmit=async e=>{e.preventDefault();const{error}=await sb.auth.signInWithPassword({email:$("#em").value,password:$("#pw").value});error?$("#msg").textContent="Login failed. Check your email and password.":staff()};return}
  if(!me.is_active||!STAFF.includes(me.role)){M.innerHTML=`<p>Your account does not have staff access.</p><button id=lo>Log out</button>`;$("#lo").onclick=logout;return}
- const can=CAT.includes(me.role);
- M.innerHTML=`<h2>Staff dashboard</h2><p class=tag>Role: ${esc(me.role)} <button class=s id=lo>Log out</button></p><div id=st class=row></div>${can?`<h3>Add a title</h3><form class=card id=nb>${TF.map(fld).join("")}<button>Save title</button><p id=nmsg role=status></p></form>`:""}${can?`<h3>Circulation</h3><form class=card id=cf onsubmit="return false"><label for=cm>Member number (e.g. M-000001), needed for Issue</label><input id=cm><label for=ca>Accession number or barcode (e.g. ACC-000001)</label><input id=ca><button type=button data-a=issue_book>Issue</button> <button type=button data-a=return_book>Return</button> <button type=button data-a=renew_book>Renew</button><p id=cmsg role=status></p></form><h3>Currently issued</h3><div id=ln></div><h3>Reservations</h3><div id=rs></div><h3>Unpaid fines</h3><div id=fn></div><h3>Members</h3><form class=card id=mf><div class=row><div><label for=mn>Full name *</label><input id=mn required></div><div><label for=me>Email</label><input id=me type=email></div><div><label for=mp>Phone</label><input id=mp type=tel></div><div><label for=mt>Member type</label><select id=mt></select></div></div><button>Add member</button><p id=mmsg role=status></p></form><div id=ml></div>`:""}<h3>Catalogue and copies</h3><div id=cl></div>${can?`<h3>Membership applications</h3><div id=ap></div>`:""}<h3>Book suggestions</h3><div id=su></div>`;
+ const can=CAT.includes(me.role),acq=["super_admin","librarian","acquisition_staff"].includes(me.role),mgr=["super_admin","librarian"].includes(me.role);
+ M.innerHTML=`<h2>Staff dashboard</h2><p class=tag>Role: ${esc(me.role)} <button class=s id=lo>Log out</button></p><div id=st class=row></div>${can?`<h3>Add a title</h3><form class=card id=nb>${TF.map(fld).join("")}<button>Save title</button><p id=nmsg role=status></p></form>`:""}${can?`<h3>Circulation</h3><form class=card id=cf onsubmit="return false"><label for=cm>Member number (e.g. M-000001), needed for Issue</label><input id=cm><label for=ca>Accession number or barcode (e.g. ACC-000001)</label><input id=ca><button type=button data-a=issue_book>Issue</button> <button type=button data-a=return_book>Return</button> <button type=button data-a=renew_book>Renew</button><p id=cmsg role=status></p></form><h3>Currently issued</h3><div id=ln></div><h3>Reservations</h3><div id=rs></div><h3>Unpaid fines</h3><div id=fn></div><h3>Members</h3><form class=card id=mf><div class=row><div><label for=mn>Full name *</label><input id=mn required></div><div><label for=me>Email</label><input id=me type=email></div><div><label for=mp>Phone</label><input id=mp type=tel></div><div><label for=mt>Member type</label><select id=mt></select></div></div><button>Add member</button><p id=mmsg role=status></p></form><div id=ml></div>`:""}${acq?`<h3>Acquisition</h3><form class=card id=sp><b>Add supplier</b><div class=row><div><label for=sn>Name *</label><input id=sn required></div><div><label for=se>Email</label><input id=se type=email></div><div><label for=sph>Phone</label><input id=sph type=tel></div></div><button>Add supplier</button><p id=spm role=status></p></form>${mgr?`<form class=card id=bd><b>Add budget</b><div class=row><div><label for=bn>Name *</label><input id=bn required></div><div><label for=by>Year</label><input id=by placeholder="2026-27"></div><div><label for=ba>Amount (Rs) *</label><input id=ba type=number min=0 step=0.01 required></div></div><button>Add budget</button><p id=bm role=status></p></form>`:""}<h4>Budgets</h4><div id=bs></div><form class=card id=od><b>New order (first item)</b><div class=row><div><label for=os>Supplier *</label><select id=os></select></div><div><label for=ob>Budget</label><select id=ob></select></div></div><div class=row><div><label for=ot>Title *</label><input id=ot required></div><div><label for=oa>Author</label><input id=oa></div><div><label for=oi>ISBN</label><input id=oi></div><div><label for=oq>Quantity *</label><input id=oq type=number min=1 value=1 required></div><div><label for=op>Unit price (Rs) *</label><input id=op type=number min=0 step=0.01 required></div></div><button>Create draft order</button><p id=om role=status></p></form><h4>Orders</h4><div id=ol></div>`:""}<h3>Catalogue and copies</h3><div id=cl></div>${can?`<h3>Membership applications</h3><div id=ap></div>`:""}<h3>Book suggestions</h3><div id=su></div>`;
  $("#lo").onclick=logout;
  const cnt=async(t,f)=>{let x=sb.from(t).select("*",{count:"exact",head:true});if(f)x=f(x);return(await x).count??0};
  const[t,c,p]=await Promise.all([cnt("bib_records"),cnt("copies"),cnt("membership_applications",x=>x.eq("status","pending"))]);
@@ -78,7 +78,7 @@ async function staff(){await loadMe();
   const{error}=await sb.from("bib_records").insert(o);
   $("#nmsg").textContent=error?(error.code==="23505"?"This ISBN already exists.":"Could not save: "+error.message):"Saved.";if(!error){e.target.reset();staff()}};
   review("membership_applications","#ap","approved","rejected",1)}
- if(can)circ();catalogue(can);review("book_suggestions","#su","accepted","rejected",1)}
+ if(can)circ();if(acq)acquisition(mgr);catalogue(can);review("book_suggestions","#su","accepted","rejected",1)}
 
 async function catalogue(can){
  const{data}=await sb.from("bib_records").select("id,title,author,call_number,copies(accession_number,status,location)").order("created_at",{ascending:false}).limit(30);
@@ -127,6 +127,38 @@ async function lists(){const today=new Date().toISOString().slice(0,10);
  $("#ln").innerHTML=(L.data||[]).map(l=>`<div class=card><b>${esc(l.copies?.bib_records?.title)}</b> <span class=tag>${esc(l.copies?.accession_number)}</span><div class=tag>${esc(l.members?.full_name)} (${esc(l.members?.member_no)}) · due ${esc(l.due_date)} · renewals ${l.renewals}</div>${l.due_date<today?`<div class=no>Overdue</div>`:""}</div>`).join("")||"<p>No books are currently issued.</p>";
  $("#fn").innerHTML=(F.data||[]).map(f=>`<div class=card>Rs ${esc(f.amount)} · ${esc(f.members?.full_name)} (${esc(f.members?.member_no)}) · ${f.days_late} days late<br><button class=s data-f="${esc(f.id)}" data-s=paid>Mark paid</button> <button class=s data-f="${esc(f.id)}" data-s=waived>Waive</button></div>`).join("")||"<p>No unpaid fines.</p>";
  $("#ml").innerHTML=(Mm.data||[]).map(m=>`<div class=card><b>${esc(m.full_name)}</b> <span class=tag>${esc(m.member_no)} · ${esc(m.member_types?.name)} · ${esc(m.status)} · expires ${esc(m.expiry_date)}</span></div>`).join("")||"<p>No members yet.</p>"}
+
+async function acquisition(mgr){
+ const val=id=>$("#"+id).value.trim(),say=(id,error,ok)=>$("#"+id).textContent=error?"Could not save: "+error.message:ok;
+ $("#sp").onsubmit=async e=>{e.preventDefault();const o={name:val("sn")};if(val("se"))o.email=val("se");if(val("sph"))o.phone=val("sph");
+  const{error}=await sb.from("suppliers").insert(o);say("spm",error,"Supplier added.");if(!error){e.target.reset();aq()}};
+ if(mgr)$("#bd").onsubmit=async e=>{e.preventDefault();const o={name:val("bn"),amount:+val("ba")};if(val("by"))o.fiscal_year=val("by");
+  const{error}=await sb.from("budgets").insert(o);say("bm",error,"Budget added.");if(!error){e.target.reset();aq()}};
+ $("#od").onsubmit=async e=>{e.preventDefault();const o={supplier_id:$("#os").value};if($("#ob").value)o.budget_id=$("#ob").value;
+  const{data:od,error}=await sb.from("orders").insert(o).select("id").single();if(error)return say("om",error);
+  const it={order_id:od.id,title:val("ot"),quantity:+val("oq"),unit_price:+val("op")};if(val("oa"))it.author=val("oa");if(val("oi"))it.isbn=val("oi");
+  const r=await sb.from("order_items").insert(it);say("om",r.error,"Draft order created.");e.target.reset();aq()};
+ $("#ol").onclick=async e=>{const b=e.target.closest("button[data-k]");if(!b)return;const k=b.dataset.k,i=b.dataset.i;let r;
+  if(k==="add"){const t=prompt("Title:");if(!t)return;const q=+prompt("Quantity:","1"),p=+prompt("Unit price (Rs):");if(!q||isNaN(p))return alert("Quantity and price are needed");r=await sb.from("order_items").insert({order_id:i,title:t.trim(),quantity:q,unit_price:p})}
+  else if(k==="place")r=await sb.rpc("place_order",{p_order:i});
+  else if(k==="cancel"){if(!confirm("Cancel this order?"))return;r=await sb.rpc("cancel_order",{p_order:i})}
+  else if(k==="recv"){const q=+prompt("How many copies arrived?","1");if(!q)return;r=await sb.rpc("receive_item",{p_item:i,p_qty:q})}
+  else if(k==="inv"){const n=prompt("Invoice number:");if(!n)return;const a=+prompt("Invoice amount (Rs):");if(!a)return;r=await sb.rpc("record_invoice",{p_order:i,p_no:n.trim(),p_amount:a})}
+  else if(k==="pay")r=await sb.rpc("pay_invoice",{p_inv:i});
+  if(r.error)alert(r.error.message);else if(typeof r.data==="string")alert(r.data);aq()};
+ aq()}
+async function aq(){
+ const[S,B,O]=await Promise.all([sb.from("suppliers").select("id,name").eq("is_active",true).order("name"),sb.from("budget_summary").select("*").order("name"),
+  sb.from("orders").select("id,order_no,status,suppliers(name),budgets(name),order_items(id,title,quantity,unit_price,received_qty),invoices(id,invoice_no,amount,status)").order("created_at",{ascending:false}).limit(20)]);
+ const opt=a=>(a||[]).map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("");
+ $("#os").innerHTML=opt(S.data);$("#ob").innerHTML=`<option value="">No budget</option>`+opt(B.data);
+ $("#bs").innerHTML=(B.data||[]).map(b=>`<div class=card><b>${esc(b.name)}</b> <span class=tag>${esc(b.fiscal_year)}</span><div class=tag>Budget Rs ${b.amount} · ordered Rs ${b.ordered} · remaining Rs ${(b.amount-b.ordered).toFixed(2)} · invoiced Rs ${b.invoiced}</div></div>`).join("")||"<p>No budgets yet.</p>";
+ const btn=(k,i,t)=>`<button class=s data-k=${k} data-i="${esc(i)}">${t}</button> `;
+ $("#ol").innerHTML=(O.data||[]).map(o=>{const tot=o.order_items.reduce((s,i)=>s+i.quantity*i.unit_price,0),got=o.order_items.some(i=>i.received_qty>0),st=o.status;
+  return `<div class=card><b>${esc(o.order_no)}</b> <span class=tag>${esc(st)} · ${esc(o.suppliers?.name)} · ${esc(o.budgets?.name||"no budget")} · Rs ${tot.toFixed(2)}</span>`
+  +o.order_items.map(i=>`<div class=tag>${esc(i.title)} × ${i.quantity} @ Rs ${i.unit_price} · received ${i.received_qty} `+(st==="placed"&&i.received_qty<i.quantity?btn("recv",i.id,"Receive"):"")+`</div>`).join("")
+  +o.invoices.map(v=>`<div class=tag>Invoice ${esc(v.invoice_no)} Rs ${v.amount} · ${esc(v.status)} `+(v.status==="unpaid"?btn("pay",v.id,"Mark paid"):"")+`</div>`).join("")
+  +(st==="draft"?btn("add",o.id,"Add item")+btn("place",o.id,"Place order"):"")+(st==="placed"||st==="received"?btn("inv",o.id,"Record invoice"):"")+(st==="draft"||(st==="placed"&&!got)?btn("cancel",o.id,"Cancel"):"")+`</div>`}).join("")||"<p>No orders yet.</p>"}
 
 sb.from("settings").select("key,value").then(({data})=>{(data||[]).forEach(r=>{if(r.key==="library_name")$("#nm").textContent=r.value;if(r.key==="tagline")$("#tg").textContent=r.value})});
 route();
